@@ -21,15 +21,96 @@ app = FastAPI(title="Document Extractor Service")
 async def health_check():
     return {"status": "healthy", "service": "document-extractor"}
 
+def create_smart_chunks(text: str, chunk_size: int = 4000, overlap: int = 400) -> List[Dict[str, Any]]:
+    """Crea chunks inteligentes del texto"""
+    if not text or len(text) <= chunk_size:
+        return [{
+            'content': text,
+            'chunk_index': 0,
+            'total_chunks': 1,
+            'start_position': 0,
+            'end_position': len(text) if text else 0
+        }]
+    
+    chunks = []
+    
+    # Dividir por párrafos primero (más inteligente que por oraciones)
+    paragraphs = text.split('\n\n')
+    current_chunk = ""
+    chunk_index = 0
+    start_position = 0
+    
+    for paragraph in paragraphs:
+        # Si el párrafo solo cabe en un nuevo chunk
+        if len(current_chunk) + len(paragraph) + 2 > chunk_size:
+            if current_chunk:
+                chunks.append({
+                    'content': current_chunk.strip(),
+                    'chunk_index': chunk_index,
+                    'start_position': start_position,
+                    'end_position': start_position + len(current_chunk)
+                })
+                chunk_index += 1
+                
+                # Overlap: tomar las últimas líneas del chunk anterior
+                lines = current_chunk.split('\n')
+                overlap_lines = lines[-5:] if len(lines) > 5 else lines
+                overlap_text = '\n'.join(overlap_lines)
+                
+                start_position = start_position + len(current_chunk) - len(overlap_text)
+                current_chunk = overlap_text + "\n\n" + paragraph
+            else:
+                # Si un párrafo es muy largo, dividirlo por oraciones
+                if len(paragraph) > chunk_size:
+                    sentences = paragraph.split('. ')
+                    for sentence in sentences:
+                        if len(current_chunk) + len(sentence) + 2 > chunk_size:
+                            chunks.append({
+                                'content': current_chunk.strip(),
+                                'chunk_index': chunk_index,
+                                'start_position': start_position,
+                                'end_position': start_position + len(current_chunk)
+                            })
+                            chunk_index += 1
+                            start_position += len(current_chunk)
+                            current_chunk = sentence + ". "
+                        else:
+                            current_chunk += sentence + ". "
+                else:
+                    current_chunk = paragraph
+        else:
+            if current_chunk:
+                current_chunk += "\n\n" + paragraph
+            else:
+                current_chunk = paragraph
+    
+    # Agregar el último chunk
+    if current_chunk:
+        chunks.append({
+            'content': current_chunk.strip(),
+            'chunk_index': chunk_index,
+            'start_position': start_position,
+            'end_position': len(text)
+        })
+    
+    # Actualizar total_chunks
+    for chunk in chunks:
+        chunk['total_chunks'] = len(chunks)
+    
+    return chunks
+
 @app.post("/extract")
 async def extract_document(
     file: UploadFile = File(...),
     extract_tables: bool = True,
     detect_language: bool = True,
-    ocr_when_needed: bool = True
+    ocr_when_needed: bool = True,
+    chunk_text: bool = True,
+    chunk_size: int = 4000,
+    chunk_overlap: int = 400
 ):
     """
-    Extrae texto de varios formatos de documentos
+    Extrae texto de varios formatos de documentos con opción de chunking
     """
     try:
         # Leer el archivo
@@ -63,6 +144,14 @@ async def extract_document(
         result['filename'] = file.filename
         result['file_size'] = len(content)
         result['content_type'] = file.content_type
+        
+        # Crear chunks si se solicita
+        if chunk_text and result.get('text'):
+            result['chunks'] = create_smart_chunks(result['text'], chunk_size, chunk_overlap)
+            result['total_chunks'] = len(result['chunks'])
+            result['chunking_method'] = 'smart_paragraph_based'
+            result['chunk_size'] = chunk_size
+            result['chunk_overlap'] = chunk_overlap
         
         return result
         

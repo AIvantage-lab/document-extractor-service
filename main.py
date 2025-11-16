@@ -2,7 +2,6 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 import PyPDF2
 import pdfplumber
-#import camelot
 from docx import Document
 import openpyxl
 from pptx import Presentation
@@ -146,32 +145,29 @@ async def extract_pdf_with_ocr(content: bytes) -> str:
         return f"Error en OCR: {str(e)}"
 
 async def extract_pdf_tables(content: bytes) -> List[Dict[str, Any]]:
-    """Extrae tablas de PDF usando Camelot"""
+    """Extrae tablas de PDF - temporalmente simplificado"""
     tables_data = []
     
     try:
+        # Por ahora usamos pdfplumber para extraer tablas básicas
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
             tmp_file.write(content)
             tmp_path = tmp_file.name
         
-        # Intentar con camelot
-        #tables = camelot.read_pdf(tmp_path, pages='all', flavor='lattice')
-        
-        if not tables:
-            # Si no encuentra con lattice, intentar con stream
-            #tables = camelot.read_pdf(tmp_path, pages='all', flavor='stream')
-        
-        for i, table in enumerate(tables):
-            tables_data.append({
-                'table_index': i,
-                'data': table.df.to_dict('records'),
-                'shape': table.df.shape,
-                'accuracy': table.accuracy
-            })
+        with pdfplumber.open(tmp_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                tables = page.extract_tables()
+                for i, table in enumerate(tables):
+                    if table:
+                        tables_data.append({
+                            'table_index': i,
+                            'page': page_num + 1,
+                            'data': table
+                        })
         
         os.unlink(tmp_path)
     except Exception as e:
-        # Si camelot falla, podríamos intentar con pdfplumber
+        # Si falla, simplemente retornar lista vacía
         pass
     
     return tables_data

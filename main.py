@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 import PyPDF2
 import pdfplumber
-import camelot
+#import camelot
 from docx import Document
 import openpyxl
 from pptx import Presentation
@@ -155,11 +155,11 @@ async def extract_pdf_tables(content: bytes) -> List[Dict[str, Any]]:
             tmp_path = tmp_file.name
         
         # Intentar con camelot
-        tables = camelot.read_pdf(tmp_path, pages='all', flavor='lattice')
+        #tables = camelot.read_pdf(tmp_path, pages='all', flavor='lattice')
         
         if not tables:
             # Si no encuentra con lattice, intentar con stream
-            tables = camelot.read_pdf(tmp_path, pages='all', flavor='stream')
+            #tables = camelot.read_pdf(tmp_path, pages='all', flavor='stream')
         
         for i, table in enumerate(tables):
             tables_data.append({
